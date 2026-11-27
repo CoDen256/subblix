@@ -1,247 +1,266 @@
 # Setting up the media server
 
-Follow this top to bottom. Every command says which machine to run it on:
+Follow this top to bottom. Every command is labelled with where to run it:
 
 - **[laptop]** — the computer you're using now
-- **[server]** — the headless box (via the USB installer, or later over SSH)
+- **[server]** — the headless box, via the USB installer or later over SSH
 
-If something goes wrong, jump to [When things break](#when-things-break).
+Roughly 20 minutes of your time, plus up to half an hour of waiting while it builds.
 
 ---
 
-## Before you start
+## What you need
 
-You need:
-
-- The headless PC, plugged into the network with a cable
+- The headless PC, connected to your router **with a network cable**
 - Your NixOS installer USB stick
-- A monitor + keyboard on the server **for the install only** — you can unplug them afterwards
+- **A monitor and keyboard on the server for Steps 4–6.** You can unplug them
+  afterwards and never attach them again — but you do need them for the
+  install itself. There is no way to install a headless machine blind.
 - The server's disk will be **completely erased**
 
 ---
 
 ## Step 1 — Get your SSH key [laptop]
 
-This is how you'll log into the server. Without it you'll be locked out.
+This is how you'll log in afterwards.
 
 ```bash
-# Do you already have one?
 cat ~/.ssh/id_ed25519.pub
 ```
 
-If that prints a line starting with `ssh-ed25519`, you're set — copy it.
-If it says "No such file", make one:
+If that prints a line starting with `ssh-ed25519` or `ssh-rsa`, copy it.
+If it says "No such file", create one first:
 
 ```bash
 ssh-keygen -t ed25519 -C "you@yourmachine"   # press Enter at every prompt
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Copy the whole line it prints.
-
 ---
 
-## Step 2 — Fill in your settings [laptop]
+## Step 2 — First pass at settings [laptop]
 
-Open `settings.nix`. It's the only file you need to edit. Change these:
+Open `settings.nix`. It's the only file you need to touch. Set these now:
 
 | Setting | What to put |
 |---|---|
-| `sshPublicKey` | The line you just copied. **Most important — don't skip.** |
+| `sshPublicKey` | The line you just copied |
 | `username` | Your login name on the server |
-| `diskDevice` | The disk to install on (you'll confirm this in Step 4) |
-| `staticIp` | A free address on your network, e.g. `192.168.1.50` |
-| `interface` | The wired device name. **Required for the static IP** — you'll get this in Step 4. |
-| `gateway` | Your router's address, usually `192.168.1.1` |
-| `repoUrl` | Your GitHub repo, e.g. `github:yourname/subblix` |
-| `timezone` | e.g. `Europe/Oslo` |
+| `fullName` | Your name (cosmetic) |
+| `timezone` | e.g. `Europe/Berlin` |
+| `repoUrl` | Your repo, e.g. `github:yourname/subblix` |
 
-Leave everything else alone for now.
+**Leave the network settings alone for now.** They default to DHCP, which
+always works. You can switch to a fixed address in Step 9, once the server can
+tell you what its network card is called.
+
+You'll come back and set `diskDevice` in Step 4.
 
 ---
 
-## Step 3 — Push it to GitHub [laptop]
+## Step 3 — Push to GitHub [laptop]
 
-The server installs itself *from GitHub*, so your settings have to be there first.
+The server installs itself *from GitHub*, so your settings must be there first.
 
 ```bash
 cd ~/dev/subblix
-git init                       # only if this isn't a repo yet
 git add -A
-git commit -m "My media server configuration"
-git branch -M main
-git remote add origin https://github.com/YOURNAME/subblix.git
-git push -u origin main
+git commit -m "My media server settings"
+git push
 ```
 
-> **The repo is public, so never commit passwords or private keys.**
-> Only your *public* key goes in here — that one is safe to share.
+> The repo is public. Never commit passwords or private keys — only your
+> **public** key, which is safe to share.
 
 ---
 
-## Step 4 — Boot the installer [server]
+## Step 4 — Boot the installer and look around [server]
 
 1. Plug in the USB stick, monitor and keyboard.
-2. Turn the server on and open the boot menu (usually `F12`, `F11` or `Esc`).
-3. Pick the USB stick.
-4. Wait for the shell prompt.
+2. Power on and open the boot menu (usually `F12`, `F11` or `Esc`).
+3. Choose the USB stick and wait for a shell prompt.
 
-Then find your disk and check the network:
+Then gather two facts:
 
 ```bash
-lsblk                 # find the disk - a 500GB one, likely "sda" or "nvme0n1"
-ip link               # find the WIRED network device, e.g. "enp3s0" or "eno1"
+lsblk                 # the disk: a ~500GB one, likely "sda" or "nvme0n1"
+ip link               # the wired network card, e.g. "enp3s0" or "eno1"
 ping -c3 github.com   # confirm you're online
 ```
 
-`ip link` lists devices like `lo`, `enp3s0`, `wlp2s0`. You want the wired one —
-usually starting with `en` or `eth`, and it will say `state UP`. Ignore `lo`.
+Write down both names. `ip link` lists things like `lo`, `enp3s0`, `wlp2s0` —
+you want the wired one, usually starting `en` or `eth`, showing `state UP`.
+Ignore `lo`.
 
-**Now go back to `settings.nix` and fix two things**, then commit and push
-again (Step 3) before continuing:
-
-- `diskDevice` — if `lsblk` showed something other than `sda`
-- `interface` — the wired device from `ip link`
-
-> Leaving `interface` empty means the static IP can't be applied. The server
-> then falls back to DHCP so you can still reach it, but it won't be at the
-> address you picked — you'd have to find it on your router.
-
-> Tip: `/dev/sda` can change between boots. A safer value is the stable name
-> from `ls -l /dev/disk/by-id/`.
+**If the disk isn't `sda`**, go back to `settings.nix` on your laptop, fix
+`diskDevice`, and push again (Step 3) before continuing.
 
 ---
 
 ## Step 5 — Install [server]
 
-Two commands. The first **erases the disk**.
+Two commands. **The first erases the disk.**
 
 ```bash
-# 1. Partition and format (ERASES EVERYTHING on that disk)
+# 1. Partition and format (DESTROYS everything on that disk)
 sudo nix --experimental-features "nix-command flakes" run github:nix-community/disko -- \
   --mode disko --flake github:YOURNAME/subblix#media
 
-# 2. Install the system
+# 2. Install
 sudo nixos-install --flake github:YOURNAME/subblix#media
 ```
 
-The second command takes a while — it builds Jellyfin's web interface with our
+The second one takes a while — it compiles Jellyfin's web interface with our
 subtitle patch. **10–30 minutes on this hardware is normal.** Let it run.
 
-It will ask you to set a **root password** at the end. Do set one — it's your
-way in at a monitor if the network ever misbehaves.
+At the end it asks you to **set a root password**. Do it, and remember it.
+This is your way in at a monitor if the network ever misbehaves. Skipping it
+is how you end up with a machine nobody can log into.
 
-When it finishes:
+---
+
+## Step 6 — First boot [server]
 
 ```bash
 reboot
 ```
 
-Pull out the USB stick. You can unplug the monitor and keyboard now — you
-won't need them again.
-
----
-
-## Step 6 — Log in from your laptop [laptop]
+Pull out the USB stick. Let it boot, then log in at the monitor as `root` with
+the password you just set, and give your own account one too:
 
 ```bash
-ssh yourusername@192.168.1.50      # the staticIp from settings.nix
+passwd coden        # use your username
+ip addr             # note the address it got from your router
 ```
 
-No password — your key does it. If you get "Permission denied", see
-[When things break](#when-things-break).
+Now you can unplug the monitor and keyboard for good.
 
 ---
 
-## Step 7 — Set the two passwords [server, over SSH]
-
-These live **outside** the repo because the repo is public.
+## Step 7 — Log in from your laptop [laptop]
 
 ```bash
-# Password for the Jellyfin admin account
+ssh coden@192.168.1.XXX      # the address from `ip addr` above
+```
+
+It should let you straight in with your key, no password.
+
+You'll also find the server in your router's DHCP lease list, under the
+hostname `media`.
+
+---
+
+## Step 8 — Set the two passwords [server, over SSH]
+
+These live **outside** the repo, because the repo is public.
+
+```bash
+# Jellyfin admin account
 sudo mkdir -p /var/lib/secrets
-sudo sh -c 'echo "pick-a-password-here" > /var/lib/secrets/jellyfin-admin-password'
+sudo sh -c 'echo "pick-a-password" > /var/lib/secrets/jellyfin-admin-password'
 sudo chmod 600 /var/lib/secrets/jellyfin-admin-password
 
-# Password for the network share (used when copying films in)
-sudo smbpasswd -a yourusername
+# Network share, for copying films in
+sudo smbpasswd -a coden
 ```
 
 Then let Jellyfin configure itself:
 
 ```bash
 sudo systemctl restart jellyfin-provision
-sudo systemctl status jellyfin-provision     # should say "Done."
+sudo systemctl status jellyfin-provision     # should end with "Done."
 ```
 
-This creates your admin account, the Movies library, and turns on hardware
-video support — no clicking through a setup wizard.
+That creates your admin account, the Movies library, and turns on hardware
+video support — no setup wizard to click through.
 
 ---
 
-## Step 8 — Copy some films in [laptop]
+## Step 9 — (Optional) Give it a fixed address
 
-Open your file manager and connect to the share:
+DHCP works fine, but a fixed address means the projector and your phone always
+find it at the same place. Two ways:
+
+**Easier — reserve it on your router.** In OpenWrt: *Network → DHCP and DNS →
+Static Leases*, bind the server's MAC to `192.168.1.50`. Nothing to change here.
+
+**Or in the config** — needs the interface name from Step 4:
+
+```nix
+useDHCP = false;
+staticIp = "192.168.1.50";
+gateway = "192.168.1.1";
+interface = "enp3s0";      # ← the real name, from `ip link`
+```
+
+Push, then rebuild (see [Everyday use](#everyday-use)).
+
+> If you set `useDHCP = false` but leave `interface` empty, the static address
+> cannot be applied. The config detects this, warns you at build time, and
+> falls back to DHCP so the machine stays reachable.
+
+---
+
+## Step 10 — Copy some films in [laptop]
+
+Connect to the share from your file manager:
 
 - **Linux / macOS:** `smb://192.168.1.50/media`
 - **Windows:** `\\192.168.1.50\media`
 
-Log in with your username and the `smbpasswd` password from Step 7.
-Drop `.mkv` files into the **movies** folder.
+Log in with your username and the `smbpasswd` password from Step 8. Drop
+`.mkv` files into the **movies** folder.
 
-Or from a browser/phone: `http://192.168.1.50:8080`
+From a phone or browser instead: `http://192.168.1.50:8080`
 
-Within 15 minutes the server will automatically:
-- pull subtitles out of the files into separate `.srt` files
-- download missing Norwegian / German / English subtitles
-- add the films to your library
-
-To not wait:
+Within 15 minutes the server automatically extracts subtitles from the files,
+downloads missing Norwegian / German / English ones, and adds the films to
+your library. To not wait:
 
 ```bash
-ssh yourusername@192.168.1.50 'sudo systemctl start subtitle-extract'
+ssh coden@192.168.1.50 'sudo systemctl start subtitle-extract'
 ```
 
 ---
 
-## Step 9 — The one manual browser setting ⚠️
+## Step 11 — The one manual browser setting ⚠️
 
-**This is the step that makes subtitle translation work. Don't skip it.**
+**This is what makes subtitle translation work. Don't skip it.**
 
 1. Open `http://192.168.1.50:8096` and sign in.
-2. Click your **user icon** (top right) → **Settings** → **Subtitles**.
+2. **User icon** (top right) → **Settings** → **Subtitles**.
 3. Set **Subtitle styling** to **Custom**.
 4. Save.
 
-### Why this matters
+### Why
 
-On the default setting, Chrome draws subtitles in a place web extensions
-cannot reach. They look completely normal on screen — but your translation
-extension sees nothing at all. There is no error message.
+On the default setting, Chrome draws subtitles somewhere browser extensions
+cannot reach. They look completely normal on screen — your translation
+extension simply sees nothing, with no error.
 
-**This setting is stored in your browser, not on the server.** So you must
-repeat it on every computer and every browser profile you watch from, and
-again if you ever clear your browsing data.
+**This is stored in your browser, not on the server.** Repeat it on every
+computer and browser profile you watch from, and again if you clear your
+browsing data.
 
-> **If hover-translation ever stops working, check this setting first.**
+> If hover-translation ever stops working, check this first.
 
 ---
 
-## Step 10 — Watching
+## Step 12 — Watching
 
-**On your computer (with translation):**
-Open `http://192.168.1.50:8096`, play a film, hover over subtitle words.
+**On your computer, with translation:**
+`http://192.168.1.50:8096`, play a film, hover over subtitle words.
 
 **On the projector:**
 Install the **Jellyfin** app from the Play Store on the projector and point it
-at `192.168.1.50`. This works better than casting — it plays more files
-without the server having to convert anything.
+at `192.168.1.50`. Better than casting — it plays more files directly without
+the server having to convert anything.
 
-Or cast from the Jellyfin phone app.
+Casting from the Jellyfin phone app also works.
 
-> When you cast, the projector draws the subtitles itself, so the translation
-> extension can't reach them. That's expected — translation is for watching
-> on your computer.
+> When casting, the projector draws its own subtitles, so the translation
+> extension can't reach them. That's expected — translation is for watching at
+> your computer.
 
 ---
 
@@ -250,23 +269,24 @@ Or cast from the Jellyfin phone app.
 ### Change a setting
 
 ```bash
-# [laptop] edit settings.nix, then:
+# [laptop]
 git add -A && git commit -m "what changed" && git push
 
 # [server]
-ssh yourusername@192.168.1.50 'sudo nixos-rebuild switch --flake github:YOURNAME/subblix#media --refresh'
+ssh coden@192.168.1.50 \
+  'sudo nixos-rebuild switch --flake github:YOURNAME/subblix#media --refresh'
 ```
 
-The server also does this by itself every night at 04:30.
+The server also does this itself nightly at 04:30.
 
 ### Undo a bad update
 
 ```bash
-ssh yourusername@192.168.1.50 'sudo nixos-rebuild switch --rollback'
+ssh coden@192.168.1.50 'sudo nixos-rebuild switch --rollback'
 ```
 
-Or, if it won't boot at all: attach a monitor, and at the boot menu pick an
-older entry. Nothing is ever destroyed — every update is a new entry.
+If it won't boot at all: attach a monitor and pick an older entry at the boot
+menu. Nothing is ever destroyed — each update is a new entry.
 
 ### Check on things
 
@@ -279,125 +299,71 @@ df -h /                                # how full is the disk?
 
 ---
 
-## Locked out? Recovering a headless server
-
-If the server never appears on the network, you can't fix it over SSH and you
-may not be able to log in at a monitor either. Recover from the USB installer —
-**this does not erase anything**:
-
-1. **[laptop]** Fix whatever was wrong in `settings.nix`, then commit and push.
-   (If you're unsure, set `useDHCP = true` — the server will then take any
-   address your router offers and show up in its lease list.)
-
-2. **[server]** Boot the USB installer again.
-
-3. **[server]** Mount the system that's already installed:
-
-   ```bash
-   lsblk                              # confirm the partition names
-   sudo mount /dev/sda3 /mnt          # the big root partition
-   sudo mount /dev/sda1 /mnt/boot     # the small 1G EFI one
-   ```
-
-4. **[server]** Reinstall the system from your updated config. This replaces
-   the system but leaves `/home`, `/srv/media` and your settings alone:
-
-   ```bash
-   sudo nixos-install --flake github:YOURNAME/subblix#media --root /mnt
-   ```
-
-   It will prompt for a **root password** — set one. That's your way in at a
-   monitor if you ever need it again.
-
-5. **[server]** `reboot`, remove the USB stick.
-
-6. **[laptop]** Find it on your router's DHCP lease list and SSH in. Then give
-   your own account a password so you're never stuck again:
-
-   ```bash
-   sudo passwd coden
-   ```
-
-### Why this happens
-
-Two settings can lock you out of a headless machine, and they compound:
-
-- `useDHCP = false` with `interface = ""` — no address is configured and DHCP
-  never runs, so nothing brings the network card up at all. The machine is
-  invisible even though the switch shows a link light.
-- No console password — if the only credential is an SSH key and SSH is
-  unreachable, a monitor doesn't help.
-
-The config now defaults to DHCP and allows console passwords, so neither
-should catch you again.
-
----
-
 ## When things break
 
-**"Permission denied" when connecting over SSH**
-Your public key didn't make it into the config. Check `sshPublicKey` in
-`settings.nix` is the full line from `cat ~/.ssh/id_ed25519.pub`, that you
-pushed it, and that you installed *after* pushing.
+### Subtitle translation stopped working
 
-**Can't reach the server at all, and it's not in your router's DHCP leases**
+1. **Check Step 11** — subtitle styling must be `Custom`. Almost always this.
+2. **Force the browser to reload the player: `Ctrl+Shift+R`.** Jellyfin caches
+   its own code in a service worker, so after a server update your browser can
+   keep running the old version for a long time. This genuinely happens and
+   looks exactly like "the patch didn't work".
+3. **Try the other subtitle track.** Tracks that came as `.ass` are drawn as a
+   picture and can't be read; pick the plain one the server extracted.
 
-Most likely `interface` was left empty in `settings.nix`, so the static IP was
-never applied. You can get in over IPv6 link-local without a monitor — those
-addresses configure themselves and SSH listens on them:
+### You see the same language listed twice
 
-```bash
-# [laptop]
-ip link                        # your wired device, e.g. enp3s0
-ping6 -c3 ff02::1%enp3s0       # every IPv6 host on the cable replies
-ip -6 neigh | grep fe80        # one of these is the server
-ssh coden@fe80::XXXX:XXXX:XXXX:XXXX%enp3s0
-```
-
-The `%enp3s0` part is required — link-local addresses need to know which
-interface to go out of.
-
-To work out which reply is the server, check your router for the MAC on the
-port it's plugged into. On OpenWrt:
-
-```bash
-bridge fdb show | grep lan4    # the port the server uses
-ping6 -c3 ff02::1%br-lan
-ip -6 neigh show dev br-lan
-```
-
-Once in, run `ip link`, put the real device name in `interface`, push, and
-rebuild. Then it'll come up at the address you wanted.
-
-If the static IP *was* applied and still won't answer, it may clash with
-another device or sit outside your router's subnet — check your router's LAN
-range.
-
-**Subtitle translation stopped working**
-1. Re-check Step 9 — subtitle styling must be **Custom**. This is nearly
-   always the cause.
-2. Try a different subtitle track. Tracks marked `.ass` are drawn as an image
-   and can't be read; pick the plain one the server extracted instead.
-3. Force your browser to reload the player: `Ctrl+Shift+R`. Jellyfin caches
-   its own code aggressively, so after a server update the browser may still
-   be running the old version.
-
-**Films play but have no subtitles**
-Check what the subtitle jobs did:
-`journalctl -u subtitle-extract -u subtitle-fetch -n 100`
-
-**You see the same subtitle language listed twice**
 Expected. One is built into the film, the other is the plain-text copy the
-server extracted. Either works; prefer the extracted one.
+server extracted. Either plays; prefer the extracted one.
 
-**The install fails while building**
-Almost always out of memory while building Jellyfin's web interface. The
-server has 12 GB so this is unlikely, but if it happens, re-run the
+### Films play but have no subtitles
+
+```bash
+journalctl -u subtitle-extract -u subtitle-fetch -n 100
+```
+
+### Can't reach the server / it's not in the DHCP leases
+
+Log in at a monitor as `root` (Step 5's password) and check:
+
+```bash
+ip addr          # does it have an address at all?
+ip link          # is the network card UP?
+systemctl status dhcpcd
+```
+
+If `interface` was set to a name that doesn't exist, the static address silently
+fails to apply. Fix it in `settings.nix`, or set `useDHCP = true`, push, and
+rebuild.
+
+### Locked out of a headless machine
+
+If it has no network address *and* you have no console password, you cannot get
+in remotely — there's nothing listening. Recover from the USB installer. This
+replaces the system but **leaves your data alone**:
+
+```bash
+# [laptop] fix settings.nix (set useDHCP = true if unsure), commit, push
+
+# [server] boot the USB installer
+lsblk
+sudo mount /dev/sda3 /mnt          # the big root partition
+sudo mount /dev/sda1 /mnt/boot     # the small 1G EFI one
+sudo nixos-install --flake github:YOURNAME/subblix#media --root /mnt
+# set a root password when prompted
+reboot
+```
+
+This is why Steps 5 and 6 insist on setting passwords.
+
+### The install fails part-way through building
+
+Usually memory pressure while building Jellyfin's web interface. Re-run the
 `nixos-install` command — it resumes rather than starting over.
 
 ---
 
-## What's running where
+## Where everything is
 
 | What | Where |
 |---|---|
