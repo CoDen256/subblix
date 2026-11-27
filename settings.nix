@@ -9,11 +9,11 @@
 
   # Your SSH public key. Get it with:  cat ~/.ssh/id_ed25519.pub
   # Without this you cannot log in after install. Replace the placeholder.
-  sshPublicKey = "ssh-ed25519 AAAAREPLACE_ME_WITH_YOUR_PUBLIC_KEY you@yourmachine";
+  sshPublicKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC2ZH4uHNFP/yQWLQP24FdsM7SkSNKHGX5pIrwIydEx9sLNIKqOsZhAP0NmPvhGoWTNal6D6APUyjgYa0iVJeRpW7RWovOdDD6vuhKebWZpRLB5ALCE6lY57ROCyugyEvkPe5paQkMMoHkJXUJ5tyn3TWPP7Bj+G9J7xN49rquauSQXed0gMYdQFxBrt87CQN+b/b3Kr2e2rTltgMlzw1FZP5bcrL6vpR1P0KysRFrddw/CPOVKuN69EdyWJV4ETve5djPwpI1G0oIRfio+HjZtK+MuYeYjLmq8khRdRvnqg0ZgylVkC3ptRGlIXifa/vV8ehy0k48uwQ9Y3u7HvFlrkDDx56uRKCYqqG+onA2Dx+s3Yumf2VJR21wI4/Xu8xgG/BukiFuIrLTtdV8fUNsYIAmnqwN/5UsuP2YBo8FmMad5Y6K28n1NcVlgxSSyXkh5eWPPVWv8uVOzaETXyyeYfO9S0NITjPSoCh3Ymi8NFQ+dpqMlRdZDMESkOtKRrZFdHh104VGpTPmptgZYYUIXcDcJWOO2cOAKi5/wcJrx4M6mKmJ3GVinqI0ruAuACmEWwcpaQJEx9prdoTBtDg7T5yMDWWK0UCTZDsOpXxSVYnQf7gkbR90MZOi8yOj/sibBwtEB3I/Bfwn6TozF2wtW2w+2tnhrbuG63FHN0a8Klw== den.blackshov@gmail.com";
 
   # --- The machine -----------------------------------------------------------
   hostname = "media";
-  timezone = "Europe/Oslo";
+  timezone = "Europe/Berlin";
   locale = "en_GB.UTF-8";
 
   # The whole disk the server is installed on. THIS DISK GETS ERASED.
@@ -47,7 +47,7 @@
 
   # --- Self-update -----------------------------------------------------------
   # The server pulls this repo and rebuilds itself on a schedule.
-  repoUrl = "github:dchernyshov/subblix";
+  repoUrl = "github:coden256/subblix";
   autoUpgrade = true;
   autoUpgradeSchedule = "04:30";
   # Keep false: you don't want the server rebooting mid-film.
