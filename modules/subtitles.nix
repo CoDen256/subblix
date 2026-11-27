@@ -17,7 +17,9 @@ let
   refreshScript = mkScript "refresh-library"   (with pkgs; [ curl coreutils ]);
 
   commonEnv = {
-    MOVIES_DIR = settings.moviesDir;
+    # Both films and TV: the whole media root, so a second library doesn't
+    # need a second set of timers.
+    MEDIA_DIR = settings.mediaRoot;
     STATE_DIR = stateDir;
     JELLYFIN_PORT = toString settings.jellyfinPort;
     WANTED_LANGS = lib.concatStringsSep " " settings.subtitleLanguages;

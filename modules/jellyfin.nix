@@ -30,6 +30,7 @@
   systemd.tmpfiles.rules = [
     "d ${settings.mediaRoot} 0775 ${settings.username} media - -"
     "d ${settings.moviesDir} 0775 ${settings.username} media - -"
+    "d ${settings.showsDir} 0775 ${settings.username} media - -"
     "d /var/lib/secrets 0750 root root - -"
   ];
 

@@ -12,7 +12,7 @@
 # and poor for Norwegian. fetch-subtitles.sh handles those films instead.
 set -euo pipefail
 
-MOVIES_DIR="${MOVIES_DIR:?MOVIES_DIR not set}"
+MEDIA_DIR="${MEDIA_DIR:?MEDIA_DIR not set}"
 STATE_DIR="${STATE_DIR:-/var/lib/subtitle-extract}"
 # Only these languages are extracted. A film can easily carry 20+ subtitle
 # tracks; pulling them all out just clutters the picker with languages you
@@ -56,7 +56,7 @@ needs_extraction() {
 }
 
 shopt -s nullglob globstar nocaseglob
-for movie in "$MOVIES_DIR"/**/*.{mkv,mp4,avi,m4v,webm}; do
+for movie in "$MEDIA_DIR"/**/*.{mkv,mp4,avi,m4v,webm}; do
   [ -f "$movie" ] || continue
 
   # Skip files we've already handled and which haven't changed since.

@@ -43,7 +43,11 @@
 
   # --- Media -----------------------------------------------------------------
   mediaRoot = "/srv/media";
+  # Films and TV go in separate folders and become separate Jellyfin
+  # libraries. TV needs its own library of type "tvshows", otherwise every
+  # episode is catalogued as an individual film.
   moviesDir = "/srv/media/movies";
+  showsDir = "/srv/media/shows";
 
   # Languages to KEEP when extracting subtitles out of film files. Anything
   # else embedded in the file is ignored -- some releases carry 20+ tracks.
@@ -52,6 +56,11 @@
   subtitleLanguages = [ "nor" "nob" "nno" "deu" "ger" "eng" ];
   # Same languages in the 2-letter form the subtitle downloader wants.
   subtitleLanguagesShort = [ "no" "de" "en" ];
+
+  # Install the Open Subtitles plugin, which adds a "Search subtitles" button
+  # to each film so you can browse and pick a specific release by hand.
+  # It needs an opensubtitles.com account; see INSTALL.md.
+  installOpenSubtitlesPlugin = true;
 
   # --- Ports -----------------------------------------------------------------
   jellyfinPort = 8096;

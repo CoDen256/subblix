@@ -291,8 +291,9 @@ Connect to the share from your file manager:
 - **Linux / macOS:** `smb://media.local/media`
 - **Windows:** `\\media.local\media`
 
-Log in with your username and the `smbpasswd` password from Step 8. Drop
-`.mkv` files into the **movies** folder.
+Log in with your username and the `smbpasswd` password from Step 8. Films go
+in **movies**, TV series in **shows** — see the next section for how to name
+them.
 
 From a phone or browser instead: `http://media.local:8080`
 
@@ -302,6 +303,83 @@ your library. To not wait:
 
 ```bash
 ssh coden@media.local 'sudo systemctl start subtitle-extract'
+```
+
+---
+
+## Step 10b — How to name and arrange your files
+
+Jellyfin works out what everything is **from the folder and file names**. Get
+this right and it finds posters, descriptions and episode ordering by itself;
+get it wrong and you get a flat wall of mystery entries.
+
+### Films → `/srv/media/movies`
+
+```
+movies/
+  Blade Runner (1982)/
+    Blade Runner (1982).mkv
+  Der Untergang (2004)/
+    Der Untergang (2004).mkv
+```
+
+A folder per film, with the **year in brackets**. The year is what makes
+matching reliable — without it, remakes and common titles land on the wrong
+entry.
+
+### TV → `/srv/media/shows`
+
+```
+shows/
+  Skam (2015)/
+    Season 01/
+      Skam S01E01.mkv
+      Skam S01E02.mkv
+    Season 02/
+      Skam S02E01.mkv
+```
+
+`SxxEyy` in the filename is what Jellyfin reads. `Season 01` folders are
+conventional and keep things tidy.
+
+> **This is why TV needs its own library.** A "movies" library pointed at
+> episodes catalogues each episode as a separate film — no series, no seasons,
+> no next-episode. The two libraries are created for you by provisioning.
+
+### Subtitles
+
+Sidecars sit beside the video and take the language as the last part:
+
+```
+Skam S01E01.mkv
+Skam S01E01.no.srt
+Skam S01E01.de.srt
+```
+
+Files ending `.ext.srt` were extracted from the video by the server — leave
+them alone.
+
+### Moving files you've already added
+
+If everything is currently loose in `movies/`, move the TV out:
+
+```bash
+ssh coden@media.local
+cd /srv/media
+
+# look before you move
+ls movies/ | grep -iE 'S[0-9]{2}E[0-9]{2}'
+
+# example: Skam
+mkdir -p "shows/Skam (2015)/Season 01"
+mv movies/Skam.S01E*  "shows/Skam (2015)/Season 01/"
+```
+
+Move the `.srt` files along with their video — the glob above does that
+already. Then rescan:
+
+```bash
+sudo systemctl start jellyfin-provision
 ```
 
 ---
@@ -345,6 +423,51 @@ Casting from the Jellyfin phone app also works.
 > When casting, the projector draws its own subtitles, so the translation
 > extension can't reach them. That's expected — translation is for watching at
 > your computer.
+
+---
+
+## Finding and managing subtitles
+
+Three mechanisms, in order of how often they act:
+
+| | What it does | When |
+|---|---|---|
+| **Extractor** | pulls `.ass`/`.ssa` tracks out of video files into `.srt`, in your languages only | every 15 min |
+| **Fetcher** | downloads missing Norwegian/German/English subtitles | hourly |
+| **Open Subtitles plugin** | lets you search and pick a specific subtitle by hand | when you ask |
+
+### Searching by hand
+
+After the first provisioning run the plugin is installed but needs an account:
+
+1. Make a free account at **opensubtitles.com** (the `.com` site, not `.org`).
+2. In Jellyfin: **Dashboard → Plugins → Open Subtitles**, enter your username
+   and password, and save.
+3. On any film or episode: **⋮ → Search subtitles**, choose a language, and
+   download the one you want.
+
+Without the login, automatic fetching still works (it uses a different
+source) — you just don't get the manual search.
+
+### Doing it yourself
+
+Drop a `.srt` next to the video over the network share, named
+`Film Name.no.srt`, then rescan. That always wins over anything automatic.
+
+### Which subtitle should I pick?
+
+For hover-translation on your PC, **any plain text one works**. Avoid entries
+labelled `.ass`/`SSA` — those draw as an image and the extension can't read
+them. The server extracts a readable copy of those automatically; it'll be
+the one ending `.ext`.
+
+### Running the jobs now instead of waiting
+
+```bash
+sudo systemctl start subtitle-extract      # pull from video files
+sudo systemctl start subtitle-fetch        # download missing ones
+journalctl -u subtitle-extract -n 30       # see what happened
+```
 
 ---
 
@@ -499,6 +622,7 @@ Usually memory pressure while building Jellyfin's web interface. Re-run the
 | File Browser (upload) | `http://media.local:8080` |
 | Network share | `smb://media.local/media` |
 | Films on disk | `/srv/media/movies` |
+| TV on disk | `/srv/media/shows` |
 | Your passwords | `/var/lib/secrets/` (never in git) |
 
 If a name doesn't resolve from some device, try `media.lan` instead, or fall

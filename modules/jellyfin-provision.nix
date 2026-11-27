@@ -25,6 +25,8 @@ in
     environment = {
       JELLYFIN_PORT = toString settings.jellyfinPort;
       MOVIES_DIR = settings.moviesDir;
+      SHOWS_DIR = settings.showsDir;
+      INSTALL_OPENSUBTITLES = if settings.installOpenSubtitlesPlugin then "1" else "0";
       ADMIN_USER = settings.username;
       ADMIN_PASSWORD_FILE = "/var/lib/secrets/jellyfin-admin-password";
       # Provisioning creates this itself so the library-refresh timer works

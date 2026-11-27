@@ -10,12 +10,13 @@ set -euo pipefail
 
 BASE="http://127.0.0.1:${JELLYFIN_PORT:-8096}"
 MOVIES_DIR="${MOVIES_DIR:?MOVIES_DIR not set}"
+SHOWS_DIR="${SHOWS_DIR:-}"
+INSTALL_OPENSUBTITLES="${INSTALL_OPENSUBTITLES:-0}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-/var/lib/secrets/jellyfin-admin-password}"
 API_KEY_FILE="${JELLYFIN_API_KEY_FILE:-/var/lib/secrets/jellyfin-api-key}"
 LANG_PREF="${METADATA_LANGUAGE:-en}"
 COUNTRY="${METADATA_COUNTRY:-NO}"
-LIBRARY_NAME="${LIBRARY_NAME:-Movies}"
 JSON='Content-Type: application/json'
 
 log()  { echo "[provision-jellyfin] $*"; }
@@ -76,19 +77,32 @@ fi
 TOKEN_HDR="Authorization: MediaBrowser Token=\"$TOKEN\""
 log "Authenticated as '$ADMIN_USER'."
 
-# --- step 2: the movie library, only if missing -----------------------------
-EXISTING="$(curl -fsS "$BASE/Library/VirtualFolders" -H "$TOKEN_HDR" 2>/dev/null || echo '[]')"
-if printf '%s' "$EXISTING" | jq -e --arg p "$MOVIES_DIR" \
-     'any(.[]; (.Locations // []) | index($p))' >/dev/null 2>&1; then
-  log "Library: one already points at $MOVIES_DIR, skipping."
-else
-  log "Library: creating '$LIBRARY_NAME' at $MOVIES_DIR ..."
+# --- step 2: libraries, each only if missing --------------------------------
+# Films and TV must be SEPARATE libraries with different collection types.
+# Pointing a "movies" library at a folder of episodes catalogues every episode
+# as its own film, with no season or series grouping.
+ensure_library() {
+  local name="$1" type="$2" path="$3"
+  [ -n "$path" ] || return 0
+
+  local existing
+  existing="$(curl -fsS "$BASE/Library/VirtualFolders" -H "$TOKEN_HDR" 2>/dev/null || echo '[]')"
+  if printf '%s' "$existing" | jq -e --arg p "$path" \
+       'any(.[]; (.Locations // []) | index($p))' >/dev/null 2>&1; then
+    log "Library '$name': already points at $path, skipping."
+    return 0
+  fi
+
+  log "Library '$name': creating ($type) at $path ..."
   curl -fsS -o /dev/null -X POST \
-    "$BASE/Library/VirtualFolders?collectionType=movies&refreshLibrary=true&name=$(jq -rn --arg v "$LIBRARY_NAME" '$v|@uri')" \
+    "$BASE/Library/VirtualFolders?collectionType=$type&refreshLibrary=true&name=$(jq -rn --arg v "$name" '$v|@uri')" \
     -H "$JSON" -H "$TOKEN_HDR" \
-    -d "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$MOVIES_DIR\"}],\"EnableRealtimeMonitor\":true}}" \
-    || warn "Library creation failed -- add it by hand in Dashboard > Libraries."
-fi
+    -d "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$path\"}],\"EnableRealtimeMonitor\":true}}" \
+    || warn "Could not create '$name' -- add it by hand in Dashboard > Libraries."
+}
+
+ensure_library "Movies" "movies"  "$MOVIES_DIR"
+ensure_library "Shows"  "tvshows" "$SHOWS_DIR"
 
 # --- step 3: hardware acceleration ------------------------------------------
 # Haswell: H.264 encode/decode in hardware, no HEVC decode -- deliberately
@@ -104,6 +118,33 @@ curl -fsS -o /dev/null -X POST "$BASE/System/Configuration/encoding" \
     "AllowHevcEncoding": false,
     "EnableThrottling": true
   }' || warn "Could not set encoding config -- set it in the UI if transcoding is slow."
+
+# --- step 3b: Open Subtitles plugin -----------------------------------------
+# Adds a "Search subtitles" button to each item so you can browse releases and
+# pick one by hand, which the automatic fetcher can't do. Installed through the
+# API so it's described here rather than being undocumented state on the box.
+#
+# Jellyfin stores plugin settings in its own database, so the opensubtitles.com
+# credentials still have to be entered once in the UI -- see INSTALL.md.
+if [ "$INSTALL_OPENSUBTITLES" = "1" ]; then
+  OS_GUID="4b9ed42f518548b598036ff2989014c4"
+  if curl -fsS "$BASE/Plugins" -H "$TOKEN_HDR" 2>/dev/null \
+       | jq -e --arg g "$OS_GUID" 'any(.[]; (.Id // "") | ascii_downcase == $g)' >/dev/null 2>&1; then
+    log "Open Subtitles plugin: already installed, skipping."
+  else
+    log "Open Subtitles plugin: installing..."
+    if curl -fsS -o /dev/null -X POST \
+         "$BASE/Packages/Installed/Open%20Subtitles?assemblyGuid=$OS_GUID" \
+         -H "$TOKEN_HDR"; then
+      log "Open Subtitles plugin: installed. RESTART JELLYFIN to load it:"
+      log "  sudo systemctl restart jellyfin"
+      log "Then add your opensubtitles.com login in Dashboard > Plugins > Open Subtitles."
+    else
+      warn "Could not install the Open Subtitles plugin.
+  Install it by hand: Dashboard > Plugins > Catalogue > Open Subtitles."
+    fi
+  fi
+fi
 
 # --- step 4: an API key, so the library-refresh timer can work --------------
 # Without this, refresh-library.service skips every run and newly added films
