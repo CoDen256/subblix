@@ -29,7 +29,10 @@
   prefixLength = 24;
   gateway = "192.168.1.1";
   nameservers = [ "192.168.1.1" "1.1.1.1" ];
-  # Leave empty to let NixOS pick the wired interface automatically.
+  # REQUIRED for a static IP: the wired network device name.
+  # Find it by running `ip link` on the server (e.g. "enp3s0", "eno1", "eth0").
+  # If you leave this empty the static IP CANNOT be applied, and the server
+  # falls back to DHCP so that it stays reachable -- look it up on your router.
   interface = "";
 
   # --- Media -----------------------------------------------------------------

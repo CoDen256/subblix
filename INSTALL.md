@@ -51,6 +51,7 @@ Open `settings.nix`. It's the only file you need to edit. Change these:
 | `username` | Your login name on the server |
 | `diskDevice` | The disk to install on (you'll confirm this in Step 4) |
 | `staticIp` | A free address on your network, e.g. `192.168.1.50` |
+| `interface` | The wired device name. **Required for the static IP** — you'll get this in Step 4. |
 | `gateway` | Your router's address, usually `192.168.1.1` |
 | `repoUrl` | Your GitHub repo, e.g. `github:yourname/subblix` |
 | `timezone` | e.g. `Europe/Oslo` |
@@ -89,11 +90,22 @@ Then find your disk and check the network:
 
 ```bash
 lsblk                 # find the disk - a 500GB one, likely "sda" or "nvme0n1"
+ip link               # find the WIRED network device, e.g. "enp3s0" or "eno1"
 ping -c3 github.com   # confirm you're online
 ```
 
-**If `lsblk` shows something other than `sda`**, go back to `settings.nix`,
-fix `diskDevice`, commit and push again (Step 3) before continuing.
+`ip link` lists devices like `lo`, `enp3s0`, `wlp2s0`. You want the wired one —
+usually starting with `en` or `eth`, and it will say `state UP`. Ignore `lo`.
+
+**Now go back to `settings.nix` and fix two things**, then commit and push
+again (Step 3) before continuing:
+
+- `diskDevice` — if `lsblk` showed something other than `sda`
+- `interface` — the wired device from `ip link`
+
+> Leaving `interface` empty means the static IP can't be applied. The server
+> then falls back to DHCP so you can still reach it, but it won't be at the
+> address you picked — you'd have to find it on your router.
 
 > Tip: `/dev/sda` can change between boots. A safer value is the stable name
 > from `ls -l /dev/disk/by-id/`.
@@ -271,10 +283,38 @@ Your public key didn't make it into the config. Check `sshPublicKey` in
 `settings.nix` is the full line from `cat ~/.ssh/id_ed25519.pub`, that you
 pushed it, and that you installed *after* pushing.
 
-**Can't reach the server at all**
-Try `ping 192.168.1.50`. If that fails, the static IP may clash with another
-device or be outside your router's range. Attach a monitor, log in, run
-`ip addr` to see the real address.
+**Can't reach the server at all, and it's not in your router's DHCP leases**
+
+Most likely `interface` was left empty in `settings.nix`, so the static IP was
+never applied. You can get in over IPv6 link-local without a monitor — those
+addresses configure themselves and SSH listens on them:
+
+```bash
+# [laptop]
+ip link                        # your wired device, e.g. enp3s0
+ping6 -c3 ff02::1%enp3s0       # every IPv6 host on the cable replies
+ip -6 neigh | grep fe80        # one of these is the server
+ssh coden@fe80::XXXX:XXXX:XXXX:XXXX%enp3s0
+```
+
+The `%enp3s0` part is required — link-local addresses need to know which
+interface to go out of.
+
+To work out which reply is the server, check your router for the MAC on the
+port it's plugged into. On OpenWrt:
+
+```bash
+bridge fdb show | grep lan4    # the port the server uses
+ping6 -c3 ff02::1%br-lan
+ip -6 neigh show dev br-lan
+```
+
+Once in, run `ip link`, put the real device name in `interface`, push, and
+rebuild. Then it'll come up at the address you wanted.
+
+If the static IP *was* applied and still won't answer, it may clash with
+another device or sit outside your router's subnet — check your router's LAN
+range.
 
 **Subtitle translation stopped working**
 1. Re-check Step 9 — subtitle styling must be **Custom**. This is nearly
