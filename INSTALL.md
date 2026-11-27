@@ -122,11 +122,14 @@ sudo nix --experimental-features "nix-command flakes" run github:nix-community/d
   --mode disko --flake github:YOURNAME/subblix#media
 
 # 2. Install the system
-sudo nixos-install --flake github:YOURNAME/subblix#media --no-root-password
+sudo nixos-install --flake github:YOURNAME/subblix#media
 ```
 
 The second command takes a while — it builds Jellyfin's web interface with our
 subtitle patch. **10–30 minutes on this hardware is normal.** Let it run.
+
+It will ask you to set a **root password** at the end. Do set one — it's your
+way in at a monitor if the network ever misbehaves.
 
 When it finishes:
 
@@ -273,6 +276,60 @@ systemctl list-timers                  # when do the subtitle jobs next run?
 journalctl -u subtitle-extract -n 50   # what did subtitle extraction do?
 df -h /                                # how full is the disk?
 ```
+
+---
+
+## Locked out? Recovering a headless server
+
+If the server never appears on the network, you can't fix it over SSH and you
+may not be able to log in at a monitor either. Recover from the USB installer —
+**this does not erase anything**:
+
+1. **[laptop]** Fix whatever was wrong in `settings.nix`, then commit and push.
+   (If you're unsure, set `useDHCP = true` — the server will then take any
+   address your router offers and show up in its lease list.)
+
+2. **[server]** Boot the USB installer again.
+
+3. **[server]** Mount the system that's already installed:
+
+   ```bash
+   lsblk                              # confirm the partition names
+   sudo mount /dev/sda3 /mnt          # the big root partition
+   sudo mount /dev/sda1 /mnt/boot     # the small 1G EFI one
+   ```
+
+4. **[server]** Reinstall the system from your updated config. This replaces
+   the system but leaves `/home`, `/srv/media` and your settings alone:
+
+   ```bash
+   sudo nixos-install --flake github:YOURNAME/subblix#media --root /mnt
+   ```
+
+   It will prompt for a **root password** — set one. That's your way in at a
+   monitor if you ever need it again.
+
+5. **[server]** `reboot`, remove the USB stick.
+
+6. **[laptop]** Find it on your router's DHCP lease list and SSH in. Then give
+   your own account a password so you're never stuck again:
+
+   ```bash
+   sudo passwd coden
+   ```
+
+### Why this happens
+
+Two settings can lock you out of a headless machine, and they compound:
+
+- `useDHCP = false` with `interface = ""` — no address is configured and DHCP
+  never runs, so nothing brings the network card up at all. The machine is
+  invisible even though the switch shows a link light.
+- No console password — if the only credential is an SSH key and SSH is
+  unreachable, a monitor doesn't help.
+
+The config now defaults to DHCP and allows console passwords, so neither
+should catch you again.
 
 ---
 

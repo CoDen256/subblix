@@ -11,6 +11,11 @@
   # Without this you cannot log in after install. Replace the placeholder.
   sshPublicKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC2ZH4uHNFP/yQWLQP24FdsM7SkSNKHGX5pIrwIydEx9sLNIKqOsZhAP0NmPvhGoWTNal6D6APUyjgYa0iVJeRpW7RWovOdDD6vuhKebWZpRLB5ALCE6lY57ROCyugyEvkPe5paQkMMoHkJXUJ5tyn3TWPP7Bj+G9J7xN49rquauSQXed0gMYdQFxBrt87CQN+b/b3Kr2e2rTltgMlzw1FZP5bcrL6vpR1P0KysRFrddw/CPOVKuN69EdyWJV4ETve5djPwpI1G0oIRfio+HjZtK+MuYeYjLmq8khRdRvnqg0ZgylVkC3ptRGlIXifa/vV8ehy0k48uwQ9Y3u7HvFlrkDDx56uRKCYqqG+onA2Dx+s3Yumf2VJR21wI4/Xu8xgG/BukiFuIrLTtdV8fUNsYIAmnqwN/5UsuP2YBo8FmMad5Y6K28n1NcVlgxSSyXkh5eWPPVWv8uVOzaETXyyeYfO9S0NITjPSoCh3Ymi8NFQ+dpqMlRdZDMESkOtKRrZFdHh104VGpTPmptgZYYUIXcDcJWOO2cOAKi5/wcJrx4M6mKmJ3GVinqI0ruAuACmEWwcpaQJEx9prdoTBtDg7T5yMDWWK0UCTZDsOpXxSVYnQf7gkbR90MZOi8yOj/sibBwtEB3I/Bfwn6TozF2wtW2w+2tnhrbuG63FHN0a8Klw== den.blackshov@gmail.com";
 
+  # Optional: path on the SERVER holding a password hash for console login.
+  # Leave null and set the password with `passwd` after install instead.
+  # Never put the hash itself in this file -- the repo is public.
+  userPasswordHashFile = null;
+
   # --- The machine -----------------------------------------------------------
   hostname = "media";
   timezone = "Europe/Berlin";
@@ -22,9 +27,10 @@
   diskDevice = "/dev/sda";
 
   # --- Network ---------------------------------------------------------------
-  # A fixed address so the phone and projector always find the server.
-  # Set useDHCP = true instead if you'd rather reserve the address on your router.
-  useDHCP = false;
+  # DHCP is the safe default: the server always gets an address.
+  # For a fixed address you need BOTH useDHCP = false AND `interface` set below.
+  # (A DHCP reservation on your router is often easier and works just as well.)
+  useDHCP = true;
   staticIp = "192.168.1.50";
   prefixLength = 24;
   gateway = "192.168.1.1";
