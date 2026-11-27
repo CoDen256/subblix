@@ -239,10 +239,20 @@ Then let Jellyfin configure itself:
 ```bash
 sudo systemctl restart jellyfin-provision
 sudo systemctl status jellyfin-provision     # should end with "Done."
+journalctl -u jellyfin-provision -n 20       # see what it actually did
 ```
 
-That creates your admin account, the Movies library, and turns on hardware
-video support — no setup wizard to click through.
+That creates your admin account, the Movies library, an API key for the
+automatic library refresh, and turns on hardware video support — no setup
+wizard to click through.
+
+It's safe to run again at any time: each step checks whether it's already
+done and skips only that one.
+
+> **If you already clicked through Jellyfin's setup wizard in a browser**, the
+> admin password you chose there must match the one in
+> `/var/lib/secrets/jellyfin-admin-password`, or the script can't log in to
+> finish the rest. It will tell you clearly if that's the case.
 
 ---
 
@@ -398,6 +408,27 @@ df -h /                                # how full is the disk?
 
 Expected. One is built into the film, the other is the plain-text copy the
 server extracted. Either plays; prefer the extracted one.
+
+### Jellyfin opens but the Movies library is empty
+
+Usually the library was never created — which happens if you clicked through
+the setup wizard in a browser before provisioning ran.
+
+```bash
+sudo systemctl start jellyfin-provision
+journalctl -u jellyfin-provision -n 20
+```
+
+If it says it can't log in, the password in
+`/var/lib/secrets/jellyfin-admin-password` doesn't match the one you set in the
+browser. Make them match and run it again.
+
+If the library exists but films don't appear, check Jellyfin can read them:
+
+```bash
+ls -la /srv/media/movies
+sudo -u jellyfin ls /srv/media/movies     # must not say "Permission denied"
+```
 
 ### Films play but have no subtitles
 

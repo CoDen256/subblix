@@ -27,6 +27,9 @@ in
       MOVIES_DIR = settings.moviesDir;
       ADMIN_USER = settings.username;
       ADMIN_PASSWORD_FILE = "/var/lib/secrets/jellyfin-admin-password";
+      # Provisioning creates this itself so the library-refresh timer works
+      # without you having to make an API key by hand in the dashboard.
+      JELLYFIN_API_KEY_FILE = "/var/lib/secrets/jellyfin-api-key";
       METADATA_COUNTRY = "NO";
       METADATA_LANGUAGE = "en";
     };

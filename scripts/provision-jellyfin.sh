@@ -1,83 +1,99 @@
 #!/usr/bin/env bash
-# Configure a fresh Jellyfin over its REST API so a reinstall needs no clicking.
+# Bring a Jellyfin instance up to the state this repo expects.
 #
-# Idempotent: if the startup wizard is already done, this exits immediately.
-# Every call used here was verified against Jellyfin 10.11.11.
+# Idempotent PER STEP, not all-or-nothing. An earlier version bailed out
+# entirely if the startup wizard was already complete -- so if you'd clicked
+# through the wizard in a browser first, the Movies library was never created
+# and Jellyfin sat there empty forever. Each step below checks for its own
+# result and skips only that.
 set -euo pipefail
 
 BASE="http://127.0.0.1:${JELLYFIN_PORT:-8096}"
 MOVIES_DIR="${MOVIES_DIR:?MOVIES_DIR not set}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-/var/lib/secrets/jellyfin-admin-password}"
+API_KEY_FILE="${JELLYFIN_API_KEY_FILE:-/var/lib/secrets/jellyfin-api-key}"
 LANG_PREF="${METADATA_LANGUAGE:-en}"
 COUNTRY="${METADATA_COUNTRY:-NO}"
+LIBRARY_NAME="${LIBRARY_NAME:-Movies}"
+JSON='Content-Type: application/json'
 
-log() { echo "[provision-jellyfin] $*"; }
+log()  { echo "[provision-jellyfin] $*"; }
+warn() { echo "[provision-jellyfin] WARNING: $*" >&2; }
+die()  { echo "[provision-jellyfin] ERROR: $*" >&2; exit 1; }
 
-# --- wait for the server to answer ------------------------------------------
+# --- wait for the server ----------------------------------------------------
 for i in $(seq 1 60); do
-  if curl -fsS -o /dev/null "$BASE/System/Info/Public" 2>/dev/null; then break; fi
-  [ "$i" = 60 ] && { log "Jellyfin never came up; giving up."; exit 1; }
+  curl -fsS -o /dev/null "$BASE/System/Info/Public" 2>/dev/null && break
+  [ "$i" = 60 ] && die "Jellyfin never came up."
   sleep 2
 done
 
-wizard_done() {
-  curl -fsS "$BASE/System/Info/Public" | grep -q '"StartupWizardCompleted":true'
-}
-
-if wizard_done; then
-  log "Already provisioned; nothing to do."
-  exit 0
-fi
-
-if [ ! -r "$PASSWORD_FILE" ]; then
-  log "ERROR: no admin password at $PASSWORD_FILE"
-  log "Create it once with:  sudo install -m600 /dev/null $PASSWORD_FILE && sudo nano $PASSWORD_FILE"
-  exit 1
-fi
+[ -r "$PASSWORD_FILE" ] || die "No admin password at $PASSWORD_FILE
+  Create it with:
+    sudo install -m600 /dev/null $PASSWORD_FILE
+    sudo sh -c 'echo YOURPASSWORD > $PASSWORD_FILE'"
 ADMIN_PASS="$(tr -d '\n' < "$PASSWORD_FILE")"
 
-JSON='Content-Type: application/json'
+# --- step 1: startup wizard, only if not already done -----------------------
+if curl -fsS "$BASE/System/Info/Public" | grep -q '"StartupWizardCompleted":true'; then
+  log "Startup wizard: already complete, skipping."
+else
+  log "Startup wizard: running..."
+  curl -fsS -o /dev/null -X POST "$BASE/Startup/Configuration" -H "$JSON" \
+    -d "{\"UICulture\":\"en-US\",\"MetadataCountryCode\":\"$COUNTRY\",\"PreferredMetadataLanguage\":\"$LANG_PREF\"}"
+  curl -fsS -o /dev/null "$BASE/Startup/User"
+  curl -fsS -o /dev/null -X POST "$BASE/Startup/User" -H "$JSON" \
+    -d "$(printf '{"Name":%s,"Password":%s}' \
+          "$(printf '%s' "$ADMIN_USER" | jq -Rs .)" \
+          "$(printf '%s' "$ADMIN_PASS"  | jq -Rs .)")"
+  curl -fsS -o /dev/null -X POST "$BASE/Startup/RemoteAccess" -H "$JSON" \
+    -d '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}'
+  curl -fsS -o /dev/null -X POST "$BASE/Startup/Complete" -H "$JSON"
+  log "Startup wizard: done."
+fi
 
-log "Setting locale/metadata preferences..."
-curl -fsS -o /dev/null -X POST "$BASE/Startup/Configuration" -H "$JSON" \
-  -d "{\"UICulture\":\"en-US\",\"MetadataCountryCode\":\"$COUNTRY\",\"PreferredMetadataLanguage\":\"$LANG_PREF\"}"
-
-# Must be fetched before the user can be set; Jellyfin seeds a default name.
-curl -fsS -o /dev/null "$BASE/Startup/User"
-
-log "Creating administrator '$ADMIN_USER'..."
-curl -fsS -o /dev/null -X POST "$BASE/Startup/User" -H "$JSON" \
-  -d "$(printf '{"Name":%s,"Password":%s}' \
-        "$(printf '%s' "$ADMIN_USER" | jq -Rs .)" \
-        "$(printf '%s' "$ADMIN_PASS"  | jq -Rs .)")"
-
-log "Setting LAN-only remote access..."
-curl -fsS -o /dev/null -X POST "$BASE/Startup/RemoteAccess" -H "$JSON" \
-  -d '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}'
-
-log "Completing startup wizard..."
-curl -fsS -o /dev/null -X POST "$BASE/Startup/Complete" -H "$JSON"
-
-# --- authenticate so we can create the library ------------------------------
+# --- authenticate -----------------------------------------------------------
 AUTH_HDR='MediaBrowser Client="provision", Device="nixos", DeviceId="nixos-provision", Version="1.0"'
 RESP="$(curl -fsS -X POST "$BASE/Users/AuthenticateByName" -H "$JSON" -H "Authorization: $AUTH_HDR" \
   -d "$(printf '{"Username":%s,"Pw":%s}' \
         "$(printf '%s' "$ADMIN_USER" | jq -Rs .)" \
-        "$(printf '%s' "$ADMIN_PASS"  | jq -Rs .)")")"
-TOKEN="$(printf '%s' "$RESP" | jq -r '.AccessToken')"
-[ -n "$TOKEN" ] && [ "$TOKEN" != "null" ] || { log "ERROR: could not authenticate"; exit 1; }
+        "$(printf '%s' "$ADMIN_PASS"  | jq -Rs .)")" 2>/dev/null)" || RESP=""
+
+TOKEN="$(printf '%s' "$RESP" | jq -r '.AccessToken // empty' 2>/dev/null || true)"
+if [ -z "$TOKEN" ]; then
+  die "Could not log in as '$ADMIN_USER'.
+
+  This usually means the startup wizard was completed by hand in a browser,
+  with a different username or password than this script expects.
+
+  Fix either side so they match:
+    - put the real password in $PASSWORD_FILE, or
+    - in Jellyfin, set user '$ADMIN_USER' to the password in that file,
+      or create that user as an administrator.
+  Then: sudo systemctl start jellyfin-provision"
+fi
 TOKEN_HDR="Authorization: MediaBrowser Token=\"$TOKEN\""
+log "Authenticated as '$ADMIN_USER'."
 
-log "Creating the Movies library at $MOVIES_DIR ..."
-curl -fsS -o /dev/null -X POST \
-  "$BASE/Library/VirtualFolders?collectionType=movies&refreshLibrary=true&name=Movies" \
-  -H "$JSON" -H "$TOKEN_HDR" \
-  -d "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$MOVIES_DIR\"}],\"EnableRealtimeMonitor\":true}}"
+# --- step 2: the movie library, only if missing -----------------------------
+EXISTING="$(curl -fsS "$BASE/Library/VirtualFolders" -H "$TOKEN_HDR" 2>/dev/null || echo '[]')"
+if printf '%s' "$EXISTING" | jq -e --arg p "$MOVIES_DIR" \
+     'any(.[]; (.Locations // []) | index($p))' >/dev/null 2>&1; then
+  log "Library: one already points at $MOVIES_DIR, skipping."
+else
+  log "Library: creating '$LIBRARY_NAME' at $MOVIES_DIR ..."
+  curl -fsS -o /dev/null -X POST \
+    "$BASE/Library/VirtualFolders?collectionType=movies&refreshLibrary=true&name=$(jq -rn --arg v "$LIBRARY_NAME" '$v|@uri')" \
+    -H "$JSON" -H "$TOKEN_HDR" \
+    -d "{\"LibraryOptions\":{\"PathInfos\":[{\"Path\":\"$MOVIES_DIR\"}],\"EnableRealtimeMonitor\":true}}" \
+    || warn "Library creation failed -- add it by hand in Dashboard > Libraries."
+fi
 
-log "Enabling VAAPI hardware acceleration..."
-# Haswell: H.264 encode/decode in hardware; HEVC decode is NOT supported, so it
-# is deliberately absent from HardwareDecodingCodecs.
+# --- step 3: hardware acceleration ------------------------------------------
+# Haswell: H.264 encode/decode in hardware, no HEVC decode -- deliberately
+# absent from HardwareDecodingCodecs.
+log "Hardware acceleration: configuring VAAPI..."
 curl -fsS -o /dev/null -X POST "$BASE/System/Configuration/encoding" \
   -H "$JSON" -H "$TOKEN_HDR" -d '{
     "HardwareAccelerationType": "vaapi",
@@ -87,6 +103,31 @@ curl -fsS -o /dev/null -X POST "$BASE/System/Configuration/encoding" \
     "EnableTonemapping": false,
     "AllowHevcEncoding": false,
     "EnableThrottling": true
-  }' || log "WARNING: could not set encoding config (set it in the UI if transcoding is slow)"
+  }' || warn "Could not set encoding config -- set it in the UI if transcoding is slow."
 
-log "Done. Jellyfin is provisioned."
+# --- step 4: an API key, so the library-refresh timer can work --------------
+# Without this, refresh-library.service skips every run and newly added films
+# never appear until you rescan by hand.
+if [ -s "$API_KEY_FILE" ]; then
+  log "API key: already present, skipping."
+else
+  log "API key: creating one for the refresh timer..."
+  curl -fsS -o /dev/null -X POST "$BASE/Auth/Keys?app=nixos-library-refresh" -H "$TOKEN_HDR" || true
+  NEWKEY="$(curl -fsS "$BASE/Auth/Keys" -H "$TOKEN_HDR" 2>/dev/null \
+            | jq -r '[.Items[]? | select(.AppName=="nixos-library-refresh")] | last | .AccessToken // empty')"
+  if [ -n "$NEWKEY" ]; then
+    install -m600 /dev/null "$API_KEY_FILE"
+    printf '%s' "$NEWKEY" > "$API_KEY_FILE"
+    log "API key: saved to $API_KEY_FILE"
+  else
+    warn "Could not create an API key. Automatic library refresh will be skipped.
+  Make one in Dashboard > API Keys and save it to $API_KEY_FILE"
+  fi
+fi
+
+# --- step 5: kick off a scan now --------------------------------------------
+log "Requesting a library scan..."
+curl -fsS -o /dev/null -X POST "$BASE/Library/Refresh" -H "$TOKEN_HDR" \
+  || warn "Scan request failed."
+
+log "Done."
