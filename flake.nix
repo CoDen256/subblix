@@ -26,6 +26,7 @@
           ./hosts/media/disko.nix
           ./hosts/media/hardware.nix
           ./modules/base.nix
+          ./modules/commands.nix
           ./modules/users.nix
           ./modules/ssh.nix
           ./modules/network.nix

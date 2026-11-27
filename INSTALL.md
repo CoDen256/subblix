@@ -347,22 +347,31 @@ Casting from the Jellyfin phone app also works.
 git add -A && git commit -m "what changed" && git push
 
 # [server]
-ssh coden@media.local \
-  'sudo nixos-rebuild switch --flake github:YOURNAME/subblix#media --refresh'
+ssh coden@media.local media-update
 ```
+
+`media-update` pulls the repo and rebuilds. It handles sudo itself, so it works
+both at a prompt and straight over SSH like that. At a prompt you can also just
+type `update`.
 
 The server also does this itself nightly at 04:30.
 
 ### Undo a bad update
 
 ```bash
-ssh coden@media.local 'sudo nixos-rebuild switch --rollback'
+ssh coden@media.local media-rollback      # or just `rollback` at a prompt
 ```
 
 If it won't boot at all: attach a monitor and pick an older entry at the boot
 menu. Nothing is ever destroyed — each update is a new entry.
 
 ### Check on things
+
+```bash
+media-status                           # services, timers, disk, address
+```
+
+Or individually:
 
 ```bash
 systemctl status jellyfin              # is the media server up?
