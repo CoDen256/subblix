@@ -99,7 +99,19 @@ Ignore `lo`.
 
 ## Step 5 — Install [server]
 
-Two commands. **The first erases the disk.**
+One command:
+
+```bash
+curl -sL https://raw.githubusercontent.com/CoDen256/subblix/main/scripts/install.sh | sudo bash
+```
+
+It reads the disk from your pushed `settings.nix`, lists what's actually in the
+machine, shows you exactly what will be erased, and **makes you type the disk
+path back** before touching anything. If `diskDevice` doesn't match reality it
+stops and tells you, without changing a thing.
+
+<details>
+<summary>Or do it by hand, if you'd rather see both steps</summary>
 
 ```bash
 # 1. Partition and format (DESTROYS everything on that disk)
@@ -110,7 +122,9 @@ sudo nix --experimental-features "nix-command flakes" run github:nix-community/d
 sudo nixos-install --flake github:YOURNAME/subblix#media
 ```
 
-The second one takes a while — it compiles Jellyfin's web interface with our
+</details>
+
+The install takes a while — it compiles Jellyfin's web interface with our
 subtitle patch. **10–30 minutes on this hardware is normal.** Let it run.
 
 At the end it asks you to **set a root password**. Do it, and remember it.
@@ -353,6 +367,8 @@ sudo nixos-install --flake github:YOURNAME/subblix#media --root /mnt
 # set a root password when prompted
 reboot
 ```
+
+Don't use `install.sh` here — it repartitions, which would wipe your films.
 
 This is why Steps 5 and 6 insist on setting passwords.
 
