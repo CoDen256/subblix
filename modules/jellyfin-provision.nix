@@ -1,12 +1,26 @@
 { pkgs, settings, ... }:
+let
+  # Built as a derivation rather than referenced as a bare file path.
+  #
+  # The previous version pointed ExecStart straight at the .sh, whose shebang
+  # is `#!/usr/bin/env bash`. systemd units get an empty PATH apart from
+  # `path`, which listed curl/jq/coreutils but not bash -- so env could not
+  # find an interpreter and the unit died with status 127. writeShellApplication
+  # bakes an absolute bash path into the shebang, puts runtimeInputs on PATH,
+  # and runs shellcheck at build time so this class of thing fails in CI rather
+  # than at 9pm on the server.
+  provisionScript = pkgs.writeShellApplication {
+    name = "provision-jellyfin";
+    runtimeInputs = with pkgs; [ curl jq coreutils ];
+    text = builtins.readFile ../scripts/provision-jellyfin.sh;
+  };
+in
 {
   systemd.services.jellyfin-provision = {
     description = "Provision Jellyfin on first run (wizard, admin, library, VAAPI)";
     after = [ "jellyfin.service" ];
     wants = [ "jellyfin.service" ];
     wantedBy = [ "multi-user.target" ];
-
-    path = with pkgs; [ curl jq coreutils ];
 
     environment = {
       JELLYFIN_PORT = toString settings.jellyfinPort;
@@ -20,8 +34,8 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${../scripts/provision-jellyfin.sh}";
-      # Don't take the boot down if the admin password file isn't there yet.
+      ExecStart = "${provisionScript}/bin/provision-jellyfin";
+      # Missing admin password file is a "come back later", not a boot failure.
       SuccessExitStatus = [ 0 1 ];
     };
   };

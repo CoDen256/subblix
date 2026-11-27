@@ -67,7 +67,7 @@ for movie in "$MOVIES_DIR"/**/*.{mkv,mp4,avi,m4v,webm}; do
     log "  stream $stream_index ($codec/$language) -> $(basename "$out")"
     # -c:s srt flattens ASS styling tags down to plain text, which is exactly
     # what we want: styled markup would only get in the extension's way.
-    if ffmpeg -v error -y -i "$movie" -map "0:$stream_index" -c:s srt "$out" 2>/dev/null; then
+    if ffmpeg -nostdin -v error -y -i "$movie" -map "0:$stream_index" -c:s srt "$out" 2>/dev/null; then
       chmod 0664 "$out" || true
       changed=1
     else

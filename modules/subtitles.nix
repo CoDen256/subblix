@@ -1,11 +1,27 @@
 { pkgs, lib, settings, ... }:
 let
   stateDir = "/var/lib/subtitle-extract";
+
+  # Built as derivations, not referenced as bare .sh paths. A systemd unit has
+  # no PATH beyond what we give it, so `#!/usr/bin/env bash` cannot find an
+  # interpreter and the unit fails with status 127. writeShellApplication bakes
+  # an absolute bash into the shebang, puts runtimeInputs on PATH, and runs
+  # shellcheck at build time.
+  mkScript = name: runtimeInputs: pkgs.writeShellApplication {
+    inherit name runtimeInputs;
+    text = builtins.readFile (../scripts + "/${name}.sh");
+  };
+
+  extractScript = mkScript "extract-subtitles" (with pkgs; [ ffmpeg-full coreutils gnugrep gnused ]);
+  fetchScript   = mkScript "fetch-subtitles"   (with pkgs; [ python3Packages.subliminal coreutils gnugrep ]);
+  refreshScript = mkScript "refresh-library"   (with pkgs; [ curl coreutils ]);
+
   commonEnv = {
     MOVIES_DIR = settings.moviesDir;
     STATE_DIR = stateDir;
     JELLYFIN_PORT = toString settings.jellyfinPort;
   };
+
   mkTimer = { unit, onCalendar, description }: {
     inherit description;
     wantedBy = [ "timers.target" ];
@@ -24,11 +40,10 @@ in
   # This is what makes .ass films readable by the browser extension.
   systemd.services.subtitle-extract = {
     description = "Extract embedded text subtitles into .srt sidecars";
-    path = with pkgs; [ ffmpeg-full coreutils gnugrep gnused ];
     environment = commonEnv;
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${../scripts/extract-subtitles.sh}";
+      ExecStart = "${extractScript}/bin/extract-subtitles";
       User = "root";
       Group = "media";
       UMask = "0002";
@@ -45,13 +60,12 @@ in
   # --- Download subtitles for films that have none --------------------------
   systemd.services.subtitle-fetch = {
     description = "Download missing subtitles (${lib.concatStringsSep ", " settings.subtitleLanguagesShort})";
-    path = with pkgs; [ python3Packages.subliminal coreutils gnugrep ];
     environment = commonEnv // {
       SUBTITLE_LANGS = lib.concatStringsSep " " settings.subtitleLanguagesShort;
     };
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${../scripts/fetch-subtitles.sh}";
+      ExecStart = "${fetchScript}/bin/fetch-subtitles";
       User = "root";
       Group = "media";
       UMask = "0002";
@@ -67,11 +81,10 @@ in
   # --- Tell Jellyfin to rescan, but only when something changed -------------
   systemd.services.library-refresh = {
     description = "Refresh the Jellyfin library after subtitle changes";
-    path = with pkgs; [ curl coreutils ];
     environment = commonEnv;
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = "${../scripts/refresh-library.sh}";
+      ExecStart = "${refreshScript}/bin/refresh-library";
     };
   };
   systemd.timers.library-refresh = mkTimer {
