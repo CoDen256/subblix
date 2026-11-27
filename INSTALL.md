@@ -144,8 +144,43 @@ the password you just set, and give your own account one too:
 
 ```bash
 passwd coden        # use your username
-ip addr             # note the address it got from your router
 ```
+
+### Pre-flight — check these BEFORE the monitor goes away
+
+Once you unplug, none of this is checkable any more. Thirty seconds now saves a
+lot of pain later:
+
+```bash
+systemctl status sshd                  # running?
+cat /etc/ssh/authorized_keys.d/coden   # is your key really there?
+systemctl status dhcpcd                # running?
+ip link                                # is there an en* device, and what's its MAC?
+ip addr                                # what address did it get?
+```
+
+> **There is no `~/.ssh` directory, and that's correct.** NixOS installs
+> declarative keys to `/etc/ssh/authorized_keys.d/<user>`, and sshd is told to
+> read both locations. Don't go hunting for `~/.ssh/authorized_keys` — it will
+> never exist, and its absence means nothing is wrong.
+
+The `ip link` MAC is worth writing down if you plan to pin the address later.
+
+### If you're moving the machine to a different place to plug it in
+
+You can prove SSH works before you lose the monitor, with no router involved.
+Plug the server's ethernet **straight into your laptop's ethernet port** — modern
+cards auto-negotiate, no crossover cable needed. Both ends get IPv6 link-local
+addresses automatically, with no DHCP server:
+
+```bash
+# [laptop]
+ping6 -c3 ff02::1%enp3s0          # your laptop's wired device
+ssh coden@fe80::XXXX:XXXX:XXXX:XXXX%enp3s0
+```
+
+That exercises the whole chain — driver, dhcpcd, sshd, your key — while you can
+still fix things on screen.
 
 Now you can unplug the monitor and keyboard for good.
 
@@ -153,14 +188,35 @@ Now you can unplug the monitor and keyboard for good.
 
 ## Step 7 — Log in from your laptop [laptop]
 
+You shouldn't need to know its IP address. Try these in order:
+
 ```bash
-ssh coden@192.168.1.XXX      # the address from `ip addr` above
+ssh coden@media.local     # mDNS - works on Linux and macOS
+ssh coden@media.lan       # your router's DNS
+ssh coden@media           # same thing, via the "search lan" suffix
 ```
 
-It should let you straight in with your key, no password.
+Any of them should let you in with your key, no password.
 
-You'll also find the server in your router's DHCP lease list, under the
-hostname `media`.
+### How the names work
+
+The server announces itself two independent ways, and neither needs a static
+address:
+
+| Name | How it resolves | Works on |
+|---|---|---|
+| `media.local` | mDNS — the server broadcasts it directly (avahi) | Linux, macOS, iOS. Android is unreliable. |
+| `media.lan` / `media` | Your router's DNS — it registers DHCP hostnames | Anything using the router for DNS, Android included |
+
+`media.lan` works because the server tells the router its hostname when asking
+for an address, and OpenWrt's dnsmasq publishes DHCP leases under the `lan`
+domain automatically.
+
+**So you don't need a static lease just to get a name.** A reserved address is
+only worth doing if you want the IP itself to never change — useful for the
+projector, where some Android TV devices ignore the router's DNS and need a
+literal address. To set one: note the MAC from `ip link`, then in OpenWrt go to
+*Network → DHCP and DNS → Static Leases* and bind it to `192.168.1.50`.
 
 ---
 
@@ -190,13 +246,16 @@ video support — no setup wizard to click through.
 
 ---
 
-## Step 9 — (Optional) Give it a fixed address
+## Step 9 — (Optional) Pin the IP address
 
-DHCP works fine, but a fixed address means the projector and your phone always
-find it at the same place. Two ways:
+**You probably don't need this.** `media.local` and `media.lan` already work on
+DHCP (Step 7). Pin the address only if you hit a device that can't resolve
+either — some Android TV boxes ignore both mDNS and the router's DNS and want a
+literal IP.
 
 **Easier — reserve it on your router.** In OpenWrt: *Network → DHCP and DNS →
-Static Leases*, bind the server's MAC to `192.168.1.50`. Nothing to change here.
+Static Leases*, bind the server's MAC to `192.168.1.50`. Nothing to change in
+this repo, and the names keep working too.
 
 **Or in the config** — needs the interface name from Step 4:
 
@@ -219,20 +278,20 @@ Push, then rebuild (see [Everyday use](#everyday-use)).
 
 Connect to the share from your file manager:
 
-- **Linux / macOS:** `smb://192.168.1.50/media`
-- **Windows:** `\\192.168.1.50\media`
+- **Linux / macOS:** `smb://media.local/media`
+- **Windows:** `\\media.local\media`
 
 Log in with your username and the `smbpasswd` password from Step 8. Drop
 `.mkv` files into the **movies** folder.
 
-From a phone or browser instead: `http://192.168.1.50:8080`
+From a phone or browser instead: `http://media.local:8080`
 
 Within 15 minutes the server automatically extracts subtitles from the files,
 downloads missing Norwegian / German / English ones, and adds the films to
 your library. To not wait:
 
 ```bash
-ssh coden@192.168.1.50 'sudo systemctl start subtitle-extract'
+ssh coden@media.local 'sudo systemctl start subtitle-extract'
 ```
 
 ---
@@ -241,7 +300,7 @@ ssh coden@192.168.1.50 'sudo systemctl start subtitle-extract'
 
 **This is what makes subtitle translation work. Don't skip it.**
 
-1. Open `http://192.168.1.50:8096` and sign in.
+1. Open `http://media.local:8096` and sign in.
 2. **User icon** (top right) → **Settings** → **Subtitles**.
 3. Set **Subtitle styling** to **Custom**.
 4. Save.
@@ -263,12 +322,13 @@ browsing data.
 ## Step 12 — Watching
 
 **On your computer, with translation:**
-`http://192.168.1.50:8096`, play a film, hover over subtitle words.
+`http://media.local:8096`, play a film, hover over subtitle words.
 
 **On the projector:**
 Install the **Jellyfin** app from the Play Store on the projector and point it
-at `192.168.1.50`. Better than casting — it plays more files directly without
-the server having to convert anything.
+at `media.lan` — or its IP, if the projector ignores your router's DNS. Better
+than casting: it plays more files directly, without the server having to
+convert anything.
 
 Casting from the Jellyfin phone app also works.
 
@@ -287,7 +347,7 @@ Casting from the Jellyfin phone app also works.
 git add -A && git commit -m "what changed" && git push
 
 # [server]
-ssh coden@192.168.1.50 \
+ssh coden@media.local \
   'sudo nixos-rebuild switch --flake github:YOURNAME/subblix#media --refresh'
 ```
 
@@ -296,7 +356,7 @@ The server also does this itself nightly at 04:30.
 ### Undo a bad update
 
 ```bash
-ssh coden@192.168.1.50 'sudo nixos-rebuild switch --rollback'
+ssh coden@media.local 'sudo nixos-rebuild switch --rollback'
 ```
 
 If it won't boot at all: attach a monitor and pick an older entry at the boot
@@ -335,6 +395,18 @@ server extracted. Either plays; prefer the extracted one.
 ```bash
 journalctl -u subtitle-extract -u subtitle-fetch -n 100
 ```
+
+### `media.local` doesn't resolve
+
+Try `media.lan`, then `media`, then the IP from your router's lease list. The
+two name systems are independent, so one failing doesn't mean the server is
+down:
+
+- `media.local` needs mDNS on **your** machine. On Linux check that
+  `/etc/nsswitch.conf` has `mdns4_minimal` in its `hosts:` line and that
+  `avahi-daemon` is running.
+- `media.lan` needs your device to use the router for DNS. Phones with a
+  "Private DNS" setting enabled will bypass it.
 
 ### Can't reach the server / it's not in the DHCP leases
 
@@ -383,8 +455,12 @@ Usually memory pressure while building Jellyfin's web interface. Re-run the
 
 | What | Where |
 |---|---|
-| Jellyfin (watch films) | `http://192.168.1.50:8096` |
-| File Browser (upload) | `http://192.168.1.50:8080` |
-| Network share | `smb://192.168.1.50/media` |
+| Jellyfin (watch films) | `http://media.local:8096` |
+| File Browser (upload) | `http://media.local:8080` |
+| Network share | `smb://media.local/media` |
 | Films on disk | `/srv/media/movies` |
 | Your passwords | `/var/lib/secrets/` (never in git) |
+
+If a name doesn't resolve from some device, try `media.lan` instead, or fall
+back to the IP from your router's lease list. Android in particular often
+ignores `.local`.
