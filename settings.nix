@@ -45,8 +45,11 @@
   mediaRoot = "/srv/media";
   moviesDir = "/srv/media/movies";
 
-  # Subtitle languages, most preferred first. ISO 639-3 codes.
-  subtitleLanguages = [ "nor" "deu" "eng" ];
+  # Languages to KEEP when extracting subtitles out of film files. Anything
+  # else embedded in the file is ignored -- some releases carry 20+ tracks.
+  # List every alias a language can be tagged with: Norwegian appears as
+  # nor/nob/nno and German as deu/ger depending on who made the file.
+  subtitleLanguages = [ "nor" "nob" "nno" "deu" "ger" "eng" ];
   # Same languages in the 2-letter form the subtitle downloader wants.
   subtitleLanguagesShort = [ "no" "de" "en" ];
 

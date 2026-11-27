@@ -20,6 +20,7 @@ let
     MOVIES_DIR = settings.moviesDir;
     STATE_DIR = stateDir;
     JELLYFIN_PORT = toString settings.jellyfinPort;
+    WANTED_LANGS = lib.concatStringsSep " " settings.subtitleLanguages;
   };
 
   mkTimer = { unit, onCalendar, description }: {
