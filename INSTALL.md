@@ -388,7 +388,7 @@ sudo systemctl start jellyfin-provision
 
 **This is what makes subtitle translation work. Don't skip it.**
 
-1. Open `http://media.local:8096` and sign in.
+1. Open `http://media.local` and sign in.
 2. **User icon** (top right) → **Settings** → **Subtitles**.
 3. Set **Subtitle styling** to **Custom**.
 4. Save.
@@ -410,7 +410,7 @@ browsing data.
 ## Step 12 — Watching
 
 **On your computer, with translation:**
-`http://media.local:8096`, play a film, hover over subtitle words.
+`http://media.local`, play a film, hover over subtitle words.
 
 **On the projector:**
 Install the **Jellyfin** app from the Play Store on the projector and point it
@@ -618,7 +618,8 @@ Usually memory pressure while building Jellyfin's web interface. Re-run the
 
 | What | Where |
 |---|---|
-| Jellyfin (watch films) | `http://media.local:8096` |
+| Jellyfin (watch films) | `http://media.local` |
+| Jellyfin (direct, bypasses nginx) | `http://media.local:8096` |
 | File Browser (upload) | `http://media.local:8080` |
 | Network share | `smb://media.local/media` |
 | Films on disk | `/srv/media/movies` |

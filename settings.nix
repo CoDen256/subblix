@@ -62,6 +62,10 @@
   # It needs an opensubtitles.com account; see INSTALL.md.
   installOpenSubtitlesPlugin = true;
 
+  # Serve Jellyfin on plain http://<hostname>.local (port 80) via nginx, so
+  # you don't have to type :8096. The direct port keeps working either way.
+  enableHttpProxy = true;
+
   # --- Ports -----------------------------------------------------------------
   jellyfinPort = 8096;
   fileBrowserPort = 8080;

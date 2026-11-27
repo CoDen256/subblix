@@ -30,6 +30,7 @@
           ./modules/users.nix
           ./modules/ssh.nix
           ./modules/network.nix
+          ./modules/proxy.nix
           ./modules/maintenance.nix
           ./modules/jellyfin.nix
           ./modules/jellyfin-provision.nix
