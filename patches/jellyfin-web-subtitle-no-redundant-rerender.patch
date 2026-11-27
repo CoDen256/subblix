@@ -1,0 +1,56 @@
+Only rewrite the subtitle element when the active cue actually changes.
+
+updateSubtitleText() is driven by the <video> element's `timeupdate` event,
+which fires roughly four times a second. It unconditionally re-assigns
+innerHTML on the subtitle element, so the subtitle DOM is rebuilt ~4x/second
+even while the very same cue is on screen. Measured on 10.11.11: 35 rewrites
+in 15 seconds for 2 actual cue changes.
+
+Besides the needless layout work, this makes the subtitle element unusable
+for anything that augments it -- a browser extension that wraps each word in
+a span to offer per-word translation has its spans destroyed within 400ms,
+continuously, for as long as the cue is displayed.
+
+This keeps the last rendered cue per subtitle slot (primary / secondary) and
+skips the DOM write when it has not changed. Cue transitions and the hide/show
+behaviour are unaffected. After the patch: rewrites equal cue changes exactly.
+
+Upstream: not yet submitted.
+
+--- RE-VERIFYING AFTER A JELLYFIN-WEB BUMP ---
+The anchor is the `if (selectedTrackEvent?.Text) { ... }` block inside
+updateSubtitleText() in src/plugins/htmlVideoPlayer/plugin.js. If the build
+fails with "patch does not apply", open that function and re-create the guard.
+The nix build fails loudly; it will not silently drop the patch.
+
+diff --git a/src/plugins/htmlVideoPlayer/plugin.js b/src/plugins/htmlVideoPlayer/plugin.js
+index 1bfa5e9..50c52a5 100644
+--- a/src/plugins/htmlVideoPlayer/plugin.js
++++ b/src/plugins/htmlVideoPlayer/plugin.js
+@@ -253,6 +253,7 @@ export class HtmlVideoPlayer {
+      * @type {HTMLElement | null | undefined}
+      */
+     #videoSubtitlesElem;
++    #lastRenderedTrackEvents = [null, null];
+     /**
+      * @type {HTMLElement | null | undefined}
+      */
+@@ -1535,10 +1536,14 @@ export class HtmlVideoPlayer {
+                 }
+ 
+                 if (selectedTrackEvent?.Text) {
+-                    subtitleTextElement.innerHTML = DOMPurify.sanitize(
+-                        normalizeTrackEventText(selectedTrackEvent.Text, true));
+-                    subtitleTextElement.classList.remove('hide');
+-                } else {
++                    if (this.#lastRenderedTrackEvents[i] !== selectedTrackEvent) {
++                        this.#lastRenderedTrackEvents[i] = selectedTrackEvent;
++                        subtitleTextElement.innerHTML = DOMPurify.sanitize(
++                            normalizeTrackEventText(selectedTrackEvent.Text, true));
++                        subtitleTextElement.classList.remove('hide');
++                    }
++                } else if (this.#lastRenderedTrackEvents[i] !== null) {
++                    this.#lastRenderedTrackEvents[i] = null;
+                     subtitleTextElement.classList.add('hide');
+                 }
+             }
